@@ -19,4 +19,4 @@ api.add_resource(BannerImageListResource, '/images')
 api.add_resource(BannerImageCreateResource, '/images/create')
 
 if __name__ == '__main__':
-    app.run(debug=False)
+    app.run(debug=True, use_reloader=True,host='0.0.0.0')
