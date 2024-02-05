@@ -8,6 +8,29 @@ from sklearn.metrics.pairwise import cosine_similarity
 from flask import request
 
 
+# class RegisterUser(Resource):
+#     def post(self):
+#         parser = reqparse.RequestParser()
+#         parser.add_argument('username', required=True, help='Username cannot be blank')
+#         parser.add_argument('password', required=True, help='Password cannot be blank')
+#         parser.add_argument('email', required=True, help='Email cannot be blank')
+#         parser.add_argument('first_name')
+#         parser.add_argument('last_name')
+#         data = parser.parse_args()
+
+#         conn = get_db()
+#         cursor = conn.cursor()
+#         cursor.execute("SELECT * FROM users1 WHERE username=? OR email=?", (data['username'], data['email']))
+#         if cursor.fetchone():
+#             return {'message': 'User with that username or email already exists'}, 400
+
+#         hashed_password = generate_password_hash(data['password'])
+#         cursor.execute("INSERT INTO users1 (username, password, email, first_name, last_name) VALUES (?, ?, ?, ?, ?)",
+#                        (data['username'], hashed_password, data['email'], data['first_name'], data['last_name']))
+#         conn.commit()
+#         return {'message': 'User registered successfully'}, 201
+
+
 class RegisterUser(Resource):
     def post(self):
         parser = reqparse.RequestParser()
@@ -16,20 +39,54 @@ class RegisterUser(Resource):
         parser.add_argument('email', required=True, help='Email cannot be blank')
         parser.add_argument('first_name')
         parser.add_argument('last_name')
+        parser.add_argument('profile_picture')  # Added profile_picture field
         data = parser.parse_args()
 
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users1 WHERE username=? OR email=?", (data['username'], data['email']))
+        
         if cursor.fetchone():
             return {'message': 'User with that username or email already exists'}, 400
 
         hashed_password = generate_password_hash(data['password'])
-        cursor.execute("INSERT INTO users1 (username, password, email, first_name, last_name) VALUES (?, ?, ?, ?, ?)",
-                       (data['username'], hashed_password, data['email'], data['first_name'], data['last_name']))
+        cursor.execute("INSERT INTO users1 (username, password, email, first_name, last_name, profile_picture) VALUES (?, ?, ?, ?, ?, ?)",
+                       (data['username'], hashed_password, data['email'], data['first_name'], data['last_name'], data['profile_picture']))
         conn.commit()
-        return {'message': 'User registered successfully'}, 201
 
+        # Retrieve the newly registered user for response
+        cursor.execute("SELECT * FROM users1 WHERE username=?", (data['username'],))
+        new_user = cursor.fetchone()
+
+        user_details = {
+            'id': new_user['id'],
+            'username': new_user['username'],
+            'email': new_user['email'],
+            'first_name': new_user['first_name'],
+            'last_name': new_user['last_name'],
+            'profile_picture': new_user['profile_picture'],
+            'has_profile_picture': new_user['has_profile_picture']
+        }
+
+        return {'message': 'User registered successfully', 'user_details': user_details}, 201
+
+# class LoginUser(Resource):
+#     def post(self):
+#         parser = reqparse.RequestParser()
+#         parser.add_argument('username', required=True, help='Username cannot be blank')
+#         parser.add_argument('password', required=True, help='Password cannot be blank')
+#         data = parser.parse_args()
+
+#         conn = get_db()
+#         cursor = conn.cursor()
+#         cursor.execute("SELECT * FROM users1 WHERE username=?", (data['username'],))
+#         user = cursor.fetchone()
+
+#         if user and check_password_hash(user['password'], data['password']):
+#             return {'message': 'Login successful'}, 200
+#         else:
+#             return {'message': 'Invalid credentials'}, 401
+    
 class LoginUser(Resource):
     def post(self):
         parser = reqparse.RequestParser()
@@ -43,9 +100,19 @@ class LoginUser(Resource):
         user = cursor.fetchone()
 
         if user and check_password_hash(user['password'], data['password']):
-            return {'message': 'Login successful'}, 200
+            user_details = {
+                'id': user['id'],
+                'username': user['username'],
+                'email': user['email'],
+                'first_name': user['first_name'],
+                'last_name': user['last_name'],
+                'profile_picture': user['profile_picture'],
+                'has_profile_picture': user['has_profile_picture']
+            }
+            return {'message': 'Login successful', 'user_details': user_details}, 200
         else:
             return {'message': 'Invalid credentials'}, 401
+
 
 class ResetPassword(Resource):
     def post(self):
@@ -103,6 +170,24 @@ class UserProfile(Resource):
         conn.commit()
         return {'message': 'User profile updated successfully'}, 200
 
+# class ProductManager(Resource):
+#     def get(self, product_id=None, category=None):
+#         conn = get_db()
+#         cursor = conn.cursor()
+#         if product_id is not None:
+#             cursor.execute("SELECT * FROM Products WHERE id=?", (product_id,))
+#         elif category is not None:
+#             cursor.execute("SELECT * FROM Products WHERE category=?", (category,))
+#         else:
+#             cursor.execute("SELECT * FROM Products")
+
+#         rows = cursor.fetchall()
+#         if not rows:
+#             return {'message': 'No products found'}, 404
+
+#         products = [dict(row) for row in rows]
+#         return {'products': products}, 200
+    
 class ProductManager(Resource):
     def get(self, product_id=None, category=None):
         conn = get_db()
@@ -120,6 +205,7 @@ class ProductManager(Resource):
 
         products = [dict(row) for row in rows]
         return {'products': products}, 200
+
 
 class ProductRecommendation(Resource):
     def get(self, product_id):
@@ -158,6 +244,25 @@ class ProductRecommendation(Resource):
             })
 
         return {'similar_products': similar_products}, 200
+
+
+def requires_login(func):
+    def wrapper(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return {'message': 'Authorization header is missing'}, 401
+
+        # Assuming you have a function to verify the token and get user information
+        user_info = verify_token(auth_header)
+        if not user_info or not check_password_hash(user_info['password_hash'], user_info['password']):
+            return {'message': 'Invalid authentication credentials'}, 401
+
+        # Attach the user information to the global context 'g' for later use
+        g.user = user_info
+
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 class BannerImageResource(Resource):
